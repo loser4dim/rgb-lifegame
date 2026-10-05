@@ -1,25 +1,39 @@
 use std::cell::RefCell;
-const MAX: usize = 512 * 512;
+const MAX_WIDTH: usize = 1920;
+const MAX_HEIGHT: usize = 1080;
+const MAX: usize = MAX_WIDTH * MAX_HEIGHT;
 struct World { width: usize, height: usize, cells: Vec<u8>, next: Vec<u8>, image: Vec<u8>, rgba: Vec<u8> }
 thread_local! { static WORLD: RefCell<World> = RefCell::new(World { width: 0, height: 0, cells: vec![0;MAX], next: vec![0;MAX], image: vec![0;MAX*4], rgba: vec![0;MAX*4] }); }
 fn advance(cells: &[u8], next: &mut [u8], width: usize, height: usize, wrap: bool) {
+    if width == 0 || height == 0 { return; }
     for y in 0..height { for x in 0..width {
-        let i = y * width + x; let mut result = 0;
-        for channel in 0..3 { let bit = 1 << channel; let mut count = 0;
-            for dy in -1isize..=1 { for dx in -1isize..=1 {
+        let i = y * width + x;
+        let mut counts = [0u8; 3];
+        for dy in -1isize..=1 {
+            let ny = y as isize + dy;
+            if !wrap && (ny < 0 || ny >= height as isize) { continue; }
+            let yy = if ny < 0 { height - 1 } else if ny >= height as isize { 0 } else { ny as usize };
+            for dx in -1isize..=1 {
                 if dx == 0 && dy == 0 { continue; }
-                let (nx, ny) = (x as isize + dx, y as isize + dy);
-                if !wrap && (nx < 0 || ny < 0 || nx >= width as isize || ny >= height as isize) { continue; }
-                let j = ny.rem_euclid(height as isize) as usize * width + nx.rem_euclid(width as isize) as usize;
-                count += usize::from(cells[j] & bit != 0);
-            } }
+                let nx = x as isize + dx;
+                if !wrap && (nx < 0 || nx >= width as isize) { continue; }
+                let xx = if nx < 0 { width - 1 } else if nx >= width as isize { 0 } else { nx as usize };
+                let cell = cells[yy * width + xx];
+                counts[0] += cell & 1;
+                counts[1] += (cell >> 1) & 1;
+                counts[2] += (cell >> 2) & 1;
+            }
+        }
+        let mut result = 0;
+        for (channel, count) in counts.into_iter().enumerate() {
+            let bit = 1 << channel;
             if count == 3 || (count == 2 && cells[i] & bit != 0) { result |= bit; }
         }
         next[i] = result;
     } }
 }
 #[unsafe(no_mangle)] pub extern "C" fn init(width: usize, height: usize) -> u32 {
-    if !(3..=512).contains(&width) || !(3..=512).contains(&height) { return 0; }
+    if !(3..=MAX_WIDTH).contains(&width) || !(3..=MAX_HEIGHT).contains(&height) { return 0; }
     WORLD.with_borrow_mut(|w| { w.width = width; w.height = height; w.cells.fill(0); }); 1
 }
 #[unsafe(no_mangle)] pub extern "C" fn image_ptr() -> *mut u8 { WORLD.with_borrow_mut(|w| w.image.as_mut_ptr()) }
@@ -53,4 +67,25 @@ fn advance(cells: &[u8], next: &mut [u8], width: usize, height: usize, wrap: boo
         for i in 0..25 { assert_eq!(cells[i]&1, if [11,12,13].contains(&i) {1} else {0}); }
     }
     #[test] fn wrapping_edges() { let mut a=vec![0;25]; let mut b=vec![0;25]; for i in [10,11,14] {a[i]=4;} advance(&a,&mut b,5,5,true); assert_eq!(b[5],4); assert_eq!(b[10],4); assert_eq!(b[15],4); advance(&a,&mut b,5,5,false); assert_eq!(b[10],0); }
+    #[test] fn optimized_update_matches_reference() {
+        let width=7; let height=5; let mut rng=1u32;
+        for wrap in [false,true] { for _ in 0..32 {
+            let mut cells=vec![0;width*height];
+            for cell in &mut cells { rng=rng.wrapping_mul(1664525).wrapping_add(1013904223); *cell=(rng>>24) as u8 & 7; }
+            let mut next=vec![0;width*height];advance(&cells,&mut next,width,height,wrap);
+            for y in 0..height { for x in 0..width { let mut expected=0;
+                for c in 0..3 { let mut n=0;
+                    for dy in -1isize..=1 { for dx in -1isize..=1 {
+                        if dx==0&&dy==0 {continue;}
+                        let nx=x as isize+dx;let ny=y as isize+dy;
+                        if !wrap&&(nx<0||ny<0||nx>=width as isize||ny>=height as isize){continue;}
+                        let i=ny.rem_euclid(height as isize) as usize*width+nx.rem_euclid(width as isize) as usize;
+                        n+=usize::from(cells[i]&(1<<c)!=0);
+                    } }
+                    if n==3||(n==2&&cells[y*width+x]&(1<<c)!=0){expected|=1<<c;}
+                }
+                assert_eq!(next[y*width+x],expected);
+            } }
+        } }
+    }
 }

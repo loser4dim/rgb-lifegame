@@ -14,7 +14,10 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: read
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -25,7 +28,7 @@ jobs:
           cache: npm
       - name: Configure Pages
         id: pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
       - name: Install Rust toolchain from rust-toolchain.toml
         run: |
           rustup show
@@ -40,7 +43,9 @@ jobs:
         env:
           NEXT_PUBLIC_BASE_PATH: ${{ steps.pages.outputs.base_path }}
       - name: Test compiled WASM
-        run: node scripts/check-wasm.mjs
+        run: |
+          node scripts/check-wasm.mjs
+          node scripts/check-worker.mjs
       - name: Upload static site
         uses: actions/upload-pages-artifact@v4
         with:
@@ -48,7 +53,7 @@ jobs:
 
   deploy:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       pages: write
       id-token: write
@@ -58,4 +63,4 @@ jobs:
     steps:
       - name: Deploy GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

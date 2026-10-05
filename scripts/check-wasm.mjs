@@ -14,7 +14,19 @@ const pixels=new Uint8Array(e.memory.buffer,e.render(7),100);
 assert.deepEqual([...pixels.slice(12*4,12*4+4)],[255,255,0,255]);
 const blue=new Uint8Array(e.memory.buffer,e.render(4),100);
 assert.deepEqual([...blue.slice(12*4,12*4+4)],[0,0,0,255]);
-assert.equal(e.init(513,5),0);
-e.init(384,256);new Uint8Array(e.memory.buffer,e.image_ptr(),384*256*4).fill(255);e.seed(127,127,127,1,0);e.step(1);
-assert.equal(new Uint8Array(e.memory.buffer,e.cells_ptr(),384*256).every(v=>v===0),true);
+assert.equal(e.init(1921,5),0);
+assert.equal(e.init(1920,1080),1);assert.equal(e.init(1920,1081),0);new Uint8Array(e.memory.buffer,e.image_ptr(),1920*1080*4).fill(255);e.seed(127,127,127,1,0);e.step(1);
+assert.equal(new Uint8Array(e.memory.buffer,e.cells_ptr(),1920*1080).every(v=>v===0),true);
 console.log("WASM integration passed: image seed, independent RGB, synchronous update, composite colors, layer mask, bounds, full-sized grid.");
+
+const w=1920,h=1080;
+e.init(w,h);
+const imageHD=new Uint8Array(e.memory.buffer,e.image_ptr(),w*h*4);imageHD.fill(0);
+const row=(h-2)*w;
+for(const x of [w-4,w-3,w-2]){const i=row+x;imageHD[i*4]=255;imageHD[i*4+3]=255;}
+e.seed(127,127,127,0,0);
+const start=performance.now();e.step(0);const elapsed=performance.now()-start;
+const hd=new Uint8Array(e.memory.buffer,e.cells_ptr(),w*h);
+for(const y of [h-3,h-2,h-1])assert.equal(hd[y*w+w-3],1);
+assert.equal(hd.reduce((a,b)=>a+(b&1),0),3);
+console.log(`Full-HD bottom-edge blinker verified; Node WASM step: ${elapsed.toFixed(1)}ms (browser performance may differ).`);

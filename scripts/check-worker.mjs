@@ -1,0 +1,20 @@
+import { readFileSync } from "node:fs";
+import { stripTypeScriptTypes } from "node:module";
+import { runInNewContext } from "node:vm";
+import assert from "node:assert/strict";
+const source=stripTypeScriptTypes(readFileSync("lib/life.worker.ts","utf8"),{mode:"strip"}).replace(/export\s*\{\s*\};?/g,"");
+const messages=[];
+const scope={postMessage(message,transfer=[]){messages.push({message,transfer});}};
+runInNewContext(source,{self:scope,WebAssembly,Uint8Array,fetch:async()=>({ok:true,arrayBuffer:async()=>readFileSync("public/wasm/rgb_life.wasm")})});
+await scope.onmessage({data:{kind:"boot",id:0,wasmUrl:"test"}});
+assert.equal(messages.pop().message.kind,"ready");
+const width=1920,height=1080,pixels=new Uint8Array(width*height*4);
+for(const x of [10,11,12]){const i=(10*width+x)*4;pixels[i]=255;pixels[i+1]=255;pixels[i+3]=255;}
+await scope.onmessage({data:{kind:"seed",id:1,width,height,pixels:pixels.buffer,thresholds:[127,127,127],dither:false,invert:false,mask:7}});
+let result=messages.pop();assert.equal(result.message.kind,"frame");assert.equal(result.message.generation,0);assert.deepEqual([...result.message.population],[3,3,0]);assert.equal(result.message.pixels.byteLength,width*height*4);assert.equal(result.message.previewWidth,320);assert.equal(result.message.previewHeight,180);assert.equal(result.transfer.length,4);
+await scope.onmessage({data:{kind:"step",id:2,wrap:true,mask:7}});
+result=messages.pop();assert.equal(result.message.generation,1);assert.deepEqual([...result.message.population],[3,3,0]);
+const image=new Uint8Array(result.message.pixels);assert.deepEqual([...image.slice((9*width+11)*4,(9*width+11)*4+4)],[255,255,0,255]);
+await scope.onmessage({data:{kind:"render",id:3,mask:4}});
+result=messages.pop();assert.equal(result.message.generation,1);assert.equal(new Uint8Array(result.message.pixels).filter((v,i)=>i%4!==3).every(v=>v===0),true);
+console.log("Full-HD worker protocol passed: boot, image seed, independent RGB, transferred frame buffers, 320×180 previews, step, layer render.");

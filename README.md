@@ -70,3 +70,18 @@ git push -u origin main
 ```
 
 上記は空のリポジトリに初回pushする場合の例です。clone済みなら `git init` と `git remote add` は不要です。
+
+## Full-HD版の変更
+
+- 初期盤面は1920×1080セル。640×360、1280×720にも切り替え可能。
+- 表示と保存は16:9。PNGは盤面と同じサイズで保存。
+- Rust/WASMの計算と縮小レイヤープレビュー生成はTypeScript Web Workerで実行。未完了の世代計算を積み上げないため、速度設定は目標値です。
+- `actions/configure-pages@v6`、`actions/deploy-pages@v5`（Node.js 24）に更新し、実行環境は `ubuntu-24.04` に固定。
+
+### Pagesの404で止まった場合
+
+先に https://github.com/loser4dim/rgb-lifegame/settings/pages を開き、**Build and deployment → Source → GitHub Actions** に設定してください。これはリポジトリの設定であり、ソースファイルの変更だけでは有効になりません。設定後、修正版をpushするかActionsからワークフローを再実行してください。
+
+`configure-pages` の `enablement: true` だけを付けても標準のGITHUB_TOKENではPages自体を有効にできないため、この版では個人アクセストークンを要求せず、GitHubの設定画面を使います。
+
+WASMの読み込みURLはコンパイル結果のSHA-256で変わるため、Full-HD版へ更新後に以前の512セル上限のWASMが再利用される問題を防ぎます。Workerの配信URLもNext.jsのビルドで変わります。
