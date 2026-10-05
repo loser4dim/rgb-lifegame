@@ -1,5 +1,5 @@
 import type { Request, Response } from "./life-protocol";
-type Engine = { memory: WebAssembly.Memory; init(w: number,h: number): number; image_ptr(): number; cells_ptr(): number; seed(r:number,g:number,b:number,dither:number,invert:number): void; step(wrap:number): void; render(mask:number): number };
+type Engine = { memory: WebAssembly.Memory; init(w: number,h: number): number; image_ptr(): number; cells_ptr(): number; seed(r:number,g:number,b:number,dither:number,invert:number): void; seed_auto(percent:number,dither:number,invert:number): void; thresholds_ptr(): number; step(wrap:number): void; render(mask:number): number };
 const scope = self as unknown as { onmessage: ((event: MessageEvent<Request>)=>void) | null; postMessage(message: Response, transfer?: Transferable[]): void };
 let engine: Engine | null = null;
 let width=0,height=0,generation=0;
@@ -22,7 +22,7 @@ function frame(id:number,mask:number) {
     }
     return rgba.buffer;
   });
-  scope.postMessage({kind:"frame",id,generation,width,height,pixels:pixels.buffer,previews,previewWidth,previewHeight,population},[pixels.buffer,...previews]);
+  scope.postMessage({kind:"frame",id,generation,width,height,pixels:pixels.buffer,previews,previewWidth,previewHeight,population,appliedThresholds:Array.from(new Int32Array(e.memory.buffer,e.thresholds_ptr(),3))},[pixels.buffer,...previews]);
 }
 scope.onmessage=async ({data})=>{
   try {
@@ -36,7 +36,8 @@ scope.onmessage=async ({data})=>{
       if(!engine.init(data.width,data.height))throw new Error("対応していない盤面サイズです。");
       width=data.width;height=data.height;
       new Uint8Array(engine.memory.buffer,engine.image_ptr(),width*height*4).set(new Uint8Array(data.pixels));
-      engine.seed(data.thresholds[0],data.thresholds[1],data.thresholds[2],Number(data.dither),Number(data.invert));generation=0;
+      if(data.auto)engine.seed_auto(data.density??30,Number(data.dither),Number(data.invert));
+      else engine.seed(data.thresholds[0],data.thresholds[1],data.thresholds[2],Number(data.dither),Number(data.invert));generation=0;
     }else if(data.kind==="step"){engine.step(Number(data.wrap));generation++;}
     if(width&&height)frame(data.id,data.mask);
   }catch(error){scope.postMessage({kind:"error",id:data.id,message:error instanceof Error?error.message:String(error)});}
